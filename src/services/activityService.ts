@@ -1,113 +1,186 @@
+// src/services/activityService.ts
+import { getDb } from 'database/db';
+import { Activity } from 'models/Activity';
 
-// activityService.ts
-import * as SQLite from 'expo-sqlite';
-import { Activity } from 'models/Activity';  // varmista että polku on oikein
+// -----------------------------
+// ACTIVITIES
+// -----------------------------
 
-type SQLiteDatabase = SQLite.SQLiteDatabase;
+export const fetchActivities = async (): Promise<Activity[]> => {
+  const db = await getDb();
+  const rows = await db.getAllAsync<any>('SELECT * FROM activities;');
 
-let db: SQLiteDatabase | null = null;
-
-const openDb = async (): Promise<SQLiteDatabase> => {
-  if (db) return db;
-  const database = await SQLite.openDatabaseAsync('aktiviteettiapp.db');
-  db = database;
-  return db;
+  return rows.map((row: any) => ({
+    id: String(row.id),
+    name: row.name,
+    description: row.description,
+    category: row.category,
+    time: row.time,
+    location: {
+      latitude: row.latitude,
+      longitude: row.longitude,
+    },
+    participants: [],
+  }));
 };
 
-const createTables = async (): Promise<void> => {
-  const database = await openDb();
-  database.transaction(tx => {
-    tx.executeSql(`
-      CREATE TABLE IF NOT EXISTS activities (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        description TEXT,
-        latitude REAL NOT NULL,
-        longitude REAL NOT NULL,
-        date TEXT NOT NULL,
-        createdByUserId TEXT,
-        participants TEXT,
-        maxParticipants INTEGER
-      );
-    `, [], 
-    () => { /* success */ }, 
-    (_, error): boolean => {
-      console.error('Error creating table activities:', error);
-      return false;
-    });
-  });
+export const getActivityById = async (
+  activityId: string
+): Promise<Activity | null> => {
+  const db = await getDb();
+  const row = await db.getFirstAsync<any>(
+    'SELECT * FROM activities WHERE id = ?;',
+    activityId
+  );
+
+  if (!row) return null;
+
+  return {
+    id: String(row.id),
+    name: row.name,
+    description: row.description,
+    category: row.category,
+    time: row.time,
+    location: {
+      latitude: row.latitude,
+      longitude: row.longitude,
+    },
+    participants: [],
+  };
 };
 
-const serializeParticipants = (participants?: string[]): string | null =>
-  participants ? JSON.stringify(participants) : null;
+export const createActivity = async (
+  activity: Omit<Activity, 'id' | 'participants'>
+): Promise<void> => {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT INTO activities (name, description, category, time, latitude, longitude)
+     VALUES (?, ?, ?, ?, ?, ?);`,
+    activity.name,
+    activity.description,
+    activity.category,
+    activity.time,
+    activity.location.latitude,
+    activity.location.longitude
+  );
+};
 
-const deserializeParticipants = (participantsStr: string | null): string[] =>
-  participantsStr ? JSON.parse(participantsStr) : [];
+export const updateActivity = async (
+  activity: Omit<Activity, 'participants'>
+): Promise<void> => {
+  const db = await getDb();
+  await db.runAsync(
+    `UPDATE activities
+     SET name = ?, description = ?, category = ?, time = ?, latitude = ?, longitude = ?
+     WHERE id = ?;`,
+    activity.name,
+    activity.description,
+    activity.category,
+    activity.time,
+    activity.location.latitude,
+    activity.location.longitude,
+    activity.id
+  );
+};
 
-export const activityService = {
-  initialize: async (): Promise<void> => {
-    await createTables();
-  },
+export const deleteActivity = async (activityId: string): Promise<void> => {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM participants WHERE activityId = ?;', activityId);
+  await db.runAsync('DELETE FROM favorites WHERE activityId = ?;', activityId);
+  await db.runAsync('DELETE FROM activities WHERE id = ?;', activityId);
+};
 
-  async getAllActivities(): Promise<Activity[]> {
-    const database = await openDb();
-    return new Promise<Activity[]>((resolve, reject) => {
-      database.transaction(tx => {
-        tx.executeSql(
-          'SELECT * FROM activities;',
-          [],
-          (_tx, result) => {
-            const rows = (result.rows as any)._array;
-            const activities: Activity[] = rows.map((row: any) => ({
-              id: row.id.toString(),
-              title: row.title,
-              description: row.description ?? '',
-              location: { latitude: row.latitude, longitude: row.longitude },
-              date: new Date(row.date),
-              createdByUserId: row.createdByUserId,
-              participants: deserializeParticipants(row.participants),
-              maxParticipants: row.maxParticipants ?? undefined,
-            }));
-            resolve(activities);
-          },
-          (_tx, error) => {
-            console.error('Error fetching activities from SQLite:', error);
-            reject(error);
-            return false;
-          }
-        );
-      });
-    });
-  },
+// -----------------------------
+// PARTICIPANTS
+// -----------------------------
 
-  async createActivity(activity: Omit<Activity, 'id'>): Promise<void> {
-    const database = await openDb();
-    return new Promise<void>((resolve, reject) => {
-      database.transaction(tx => {
-        tx.executeSql(
-          `INSERT INTO activities 
-            (title, description, latitude, longitude, date, createdByUserId, participants, maxParticipants)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
-          [
-            activity.title,
-            activity.description,
-            activity.location.latitude,
-            activity.location.longitude,
-            activity.date.toISOString(),
-            activity.createdByUserId,
-            serializeParticipants(activity.participants),
-            activity.maxParticipants ?? null,
-          ],
-          () => {
-            resolve();
-          },
-          (_tx, error) => {
-            console.error('Error inserting activity into SQLite:', error);
-            reject(error);
-            return false;
-          }
-        );
-      });
-    });
-  },
+export const fetchParticipants = async (
+  activityId: string
+): Promise<string[]> => {
+  const db = await getDb();
+  const rows = await db.getAllAsync<any>(
+    'SELECT name FROM participants WHERE activityId = ?;',
+    activityId
+  );
+  return rows.map((row: any) => row.name);
+};
+
+export const joinActivity = async (
+  activityId: string,
+  name: string
+): Promise<void> => {
+  const db = await getDb();
+  await db.runAsync(
+    'INSERT INTO participants (activityId, name) VALUES (?, ?);',
+    activityId,
+    name
+  );
+};
+
+export const leaveActivity = async (
+  activityId: string,
+  name: string
+): Promise<void> => {
+  const db = await getDb();
+  await db.runAsync(
+    'DELETE FROM participants WHERE activityId = ? AND name = ?;',
+    activityId,
+    name
+  );
+};
+
+// -----------------------------
+// FAVORITES
+// -----------------------------
+
+// HUOM: varmista, että favorites-taulu luodaan database/db.ts:ssä
+// CREATE TABLE IF NOT EXISTS favorites (activityId TEXT PRIMARY KEY);
+
+export const addFavorite = async (activityId: string): Promise<void> => {
+  const db = await getDb();
+  await db.runAsync(
+    'INSERT OR IGNORE INTO favorites (activityId) VALUES (?);',
+    activityId
+  );
+};
+
+export const removeFavorite = async (activityId: string): Promise<void> => {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM favorites WHERE activityId = ?;', activityId);
+};
+
+export const isFavorite = async (activityId: string): Promise<boolean> => {
+  const db = await getDb();
+  const row = await db.getFirstAsync<any>(
+    'SELECT * FROM favorites WHERE activityId = ?;',
+    activityId
+  );
+  return !!row;
+};
+
+export const fetchFavoriteActivities = async (): Promise<Activity[]> => {
+  const db = await getDb();
+  const rows = await db.getAllAsync<any>(
+    `SELECT a.*
+     FROM activities a
+     JOIN favorites f ON f.activityId = a.id;`
+  );
+
+  return rows.map((row: any) => ({
+    id: String(row.id),
+    name: row.name,
+    description: row.description,
+    category: row.category,
+    time: row.time,
+    location: {
+      latitude: row.latitude,
+      longitude: row.longitude,
+    },
+    participants: [],
+  }));
+};
+
+// "Omat aktiviteetit" – ei kirjautumista → nyt kaikki
+export const fetchUserActivities = async (): Promise<Activity[]> => {
+  return fetchActivities();
 };

@@ -1,72 +1,207 @@
-import React, { useState } from "react";
-import { View, TextInput, Button, Text, StyleSheet, Alert, Platform } from "react-native";
-import DateTimePicker from "@react-native-community/datetimepicker";
-import { createActivity } from "../services/activityService";
-import { Activity } from "../models/Activity";
-import { auth } from "../firebase/config";
-import { Picker } from "@react-native-picker/picker";
+// src/screens/CreateActivityScreen.tsx
 
-export default function CreateActivityScreen({ navigation }: any) {
+import React, { useEffect, useState } from "react";
+import {
+  ScrollView,
+  View,
+  TextInput,
+  Button,
+  Text,
+  StyleSheet,
+  Alert,
+  Platform,
+} from "react-native";
+
+import DateTimePicker from "@react-native-community/datetimepicker";
+import MapView, { Marker, MapPressEvent } from "react-native-maps";
+
+import {
+  createActivity,
+  getActivityById,
+  updateActivity,
+} from "services/activityService";
+
+import { Picker } from "@react-native-picker/picker";
+import { Activity } from "models/Activity";
+
+import {
+  COLORS,
+  SPACING,
+  FONT_SIZES,
+  FONT_WEIGHTS,
+} from "components/theme";
+
+import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { RootStackParamList } from "navigation/RootNavigator";
+
+type Props = NativeStackScreenProps<RootStackParamList, "CreateActivity">;
+
+const CreateActivityScreen: React.FC<Props> = ({ navigation, route }) => {
+  const activityId = route.params && "activityId" in route.params
+    ? route.params.activityId
+    : null;
+
+  const presetLat =
+    route.params && "latitude" in route.params ? route.params.latitude : null;
+
+  const presetLon =
+    route.params && "longitude" in route.params ? route.params.longitude : null;
+
+  const isEditing = !!activityId;
+
+  // FORM STATE
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("liikunta");
-  const [latitude, setLatitude] = useState<number | null>(null);
-  const [longitude, setLongitude] = useState<number | null>(null);
+  const [location, setLocation] = useState<{
+    latitude: number | null;
+    longitude: number | null;
+  }>({
+    latitude: presetLat ?? null,
+    longitude: presetLon ?? null,
+  });
+
   const [date, setDate] = useState(new Date());
   const [showPicker, setShowPicker] = useState(false);
   const [mode, setMode] = useState<"date" | "time">("date");
+  const [loading, setLoading] = useState(false);
 
+  const [original, setOriginal] = useState<Activity | null>(null);
+
+  // LOAD EXISTING ACTIVITY IF EDITING
+  useEffect(() => {
+    if (!activityId) return;
+
+    const load = async () => {
+      setLoading(true);
+      try {
+        const act = await getActivityById(activityId);
+        if (!act) {
+          Alert.alert("Virhe", "Aktiviteettia ei löytynyt.");
+          navigation.goBack();
+          return;
+        }
+
+        setOriginal(act);
+        setName(act.name);
+        setDescription(act.description);
+        setCategory(act.category);
+        setDate(new Date(act.time));
+        setLocation({
+          latitude: act.location.latitude,
+          longitude: act.location.longitude,
+        });
+      } catch (e) {
+        console.error(e);
+        Alert.alert("Virhe", "Virhe ladattaessa aktiviteettia.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, [activityId, navigation]);
+
+  // DATE SELECT
   const handleChange = (_event: any, selectedDate?: Date) => {
-    const currentDate = selectedDate || date;
+    if (selectedDate) {
+      setDate(selectedDate);
+    }
     setShowPicker(Platform.OS === "ios");
-    setDate(currentDate);
   };
 
   const showMode = (currentMode: "date" | "time") => {
-    setShowPicker(true);
     setMode(currentMode);
+    setShowPicker(true);
   };
 
-  const showDatepicker = () => {
-    showMode("date");
-  };
-
-  const showTimepicker = () => {
-    showMode("time");
-  };
-
+  // SUBMIT
   const handleSubmit = async () => {
-    if (!name.trim() || !description.trim() || latitude === null || longitude === null) {
+    if (!name.trim() || !description.trim()) {
       Alert.alert("Virhe", "Täytä kaikki kentät!");
       return;
     }
 
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
-      Alert.alert("Virhe", "Kirjaudu sisään luodaksesi aktiviteetin.");
+    if (!location.latitude || !location.longitude) {
+      Alert.alert("Virhe", "Valitse sijainti kartalta!");
       return;
     }
 
-    const newActivity: Omit<Activity, "id" | "participants"> = {
+    const base: Omit<Activity, "participants"> = {
+      id: original?.id ?? "",
       name: name.trim(),
       description: description.trim(),
       category,
       time: date.toISOString(),
-      location: { latitude: latitude as number, longitude: longitude as number },
-      creatorId: currentUser.uid
+      location: {
+        latitude: location.latitude,
+        longitude: location.longitude,
+      },
+      creatorId: original?.creatorId,
     };
 
     try {
-      await createActivity(newActivity);
-      Alert.alert("Onnistui", "Aktiviteetti luotu!");
+      if (isEditing && original) {
+        await updateActivity(base);
+        Alert.alert("Onnistui", "Aktiviteetti päivitetty!");
+      } else {
+        await createActivity({
+          name: base.name,
+          description: base.description,
+          category: base.category,
+          time: base.time,
+          location: base.location,
+        });
+        Alert.alert("Onnistui", "Aktiviteetti luotu!");
+      }
+
       navigation.navigate("ActivitiesList");
     } catch (error: any) {
-      Alert.alert("Virhe", error.message || "Aktiviteetin luominen epäonnistui.");
+      console.error(error);
+      Alert.alert("Virhe", "Tallennus epäonnistui.");
     }
   };
 
+  // MAP TAP HANDLER
+  const onMapPress = (e: MapPressEvent) => {
+    setLocation({
+      latitude: e.nativeEvent.coordinate.latitude,
+      longitude: e.nativeEvent.coordinate.longitude,
+    });
+  };
+
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.screen} contentContainerStyle={{ padding: SPACING.lg }}>
+      <Text style={styles.heading}>
+        {isEditing ? "Muokkaa aktiviteettia" : "Luo uusi aktiviteetti"}
+      </Text>
+
+      {/* MAP SELECTOR */}
+      <Text style={styles.label}>Valitse sijainti kartalta</Text>
+
+      <View style={styles.mapWrapper}>
+        <MapView
+          style={styles.map}
+          initialRegion={{
+            latitude: location.latitude ?? 60.1699,
+            longitude: location.longitude ?? 24.9384,
+            latitudeDelta: 0.05,
+            longitudeDelta: 0.05,
+          }}
+          onPress={onMapPress}
+        >
+          {location.latitude && location.longitude && (
+            <Marker
+              coordinate={{
+                latitude: location.latitude,
+                longitude: location.longitude,
+              }}
+            />
+          )}
+        </MapView>
+      </View>
+
+      {/* NAME */}
       <Text style={styles.label}>Nimi</Text>
       <TextInput
         placeholder="Nimi"
@@ -74,13 +209,18 @@ export default function CreateActivityScreen({ navigation }: any) {
         onChangeText={setName}
         style={styles.input}
       />
+
+      {/* DESCRIPTION */}
       <Text style={styles.label}>Kuvaus</Text>
       <TextInput
         placeholder="Kuvaus"
         value={description}
         onChangeText={setDescription}
-        style={styles.input}
+        style={[styles.input, { height: 80 }]}
+        multiline
       />
+
+      {/* CATEGORY */}
       <Text style={styles.label}>Kategoria</Text>
       <Picker
         selectedValue={category}
@@ -91,72 +231,79 @@ export default function CreateActivityScreen({ navigation }: any) {
         <Picker.Item label="Kulttuuri" value="kulttuuri" />
         <Picker.Item label="Yhteisö" value="yhteisö" />
       </Picker>
-      <Text style={styles.label}>Latitude</Text>
-      <TextInput
-        placeholder="Latitude"
-        keyboardType="numeric"
-        value={latitude !== null ? latitude.toString() : ""}
-        onChangeText={text => setLatitude(parseFloat(text))}
-        style={styles.input}
-      />
-      <Text style={styles.label}>Longitude</Text>
-      <TextInput
-        placeholder="Longitude"
-        keyboardType="numeric"
-        value={longitude !== null ? longitude.toString() : ""}
-        onChangeText={text => setLongitude(parseFloat(text))}
-        style={styles.input}
-      />
-      <Text style={styles.label}>Päivämäärä & Kellonaika</Text>
-      <View style={styles.buttonRow}>
-        <Button onPress={showDatepicker} title="Valitse päivä" />
-        <Button onPress={showTimepicker} title="Valitse aika" />
+
+      {/* DATE & TIME */}
+      <Text style={styles.label}>Päivämäärä & aikavalinta</Text>
+
+      <View style={styles.row}>
+        <Button title="Valitse päivä" onPress={() => showMode("date")} />
+        <Button title="Valitse aika" onPress={() => showMode("time")} />
       </View>
+
       {showPicker && (
         <DateTimePicker
           value={date}
           mode={mode}
-          is24Hour={true}
+          is24Hour
           display="default"
           onChange={handleChange}
         />
       )}
-      <Text style={styles.selectedDate}>{date.toLocaleString()}</Text>
-      <Button title="Luo aktiviteetti" onPress={handleSubmit} />
-    </View>
+
+      <Text style={styles.selected}>{date.toLocaleString()}</Text>
+
+      {/* SUBMIT BUTTON */}
+      <Button
+        title={isEditing ? "Tallenna muutokset" : "Luo aktiviteetti"}
+        onPress={handleSubmit}
+      />
+    </ScrollView>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-    backgroundColor: "#fff"
+  screen: { flex: 1, backgroundColor: COLORS.background },
+
+  mapWrapper: {
+    height: 250,
+    borderRadius: 12,
+    overflow: "hidden",
+    marginBottom: SPACING.lg,
   },
+  map: { flex: 1 },
+
+  heading: {
+    fontSize: FONT_SIZES.xl,
+    fontWeight: FONT_WEIGHTS.bold,
+    marginBottom: SPACING.lg,
+  },
+
   label: {
-    fontSize: 16,
-    marginBottom: 4
+    fontSize: FONT_SIZES.md,
+    marginBottom: 6,
   },
   input: {
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 4
+    backgroundColor: "white",
+    padding: SPACING.md,
+    borderRadius: 8,
+    marginBottom: SPACING.md,
   },
   picker: {
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#ccc"
+    backgroundColor: "white",
+    marginBottom: SPACING.md,
   },
-  buttonRow: {
+
+  row: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 12
+    marginBottom: SPACING.md,
   },
-  selectedDate: {
-    marginBottom: 12,
-    fontSize: 16,
-    textAlign: "center"
-  }
+
+  selected: {
+    textAlign: "center",
+    marginBottom: SPACING.lg,
+    fontWeight: FONT_WEIGHTS.medium,
+  },
 });
+
+export default CreateActivityScreen;
