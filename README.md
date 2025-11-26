@@ -97,7 +97,7 @@ activityId (muokkaus)
 
 latitude + longitude (luo kartasta)
 
-🧩 Tietokantarakenne
+Tietokantarakenne
 activities
 kenttä	tyyppi
 id	INTEGER PRIMARY KEY
@@ -183,7 +183,7 @@ Käyttäjänä haluan merkitä aktiviteetteja suosikeiksi ja tarkastella niitä 
 
 Käyttäjänä haluan nähdä omat ja suosikkiaktiviteetit profiilissa.
 
-⚠️ Huomio: Kirjautumista ei ehditty toteuttaa
+Huomio: Kirjautumista ei ehditty toteuttaa
 
 Projektiin oli alun perin suunniteltu:
 
@@ -193,7 +193,7 @@ Firebase Auth / supabase-auth
 
 käyttäjäkohtaiset aktiviteetit
 
-🔎 Kehitysidea
+Kehitysidea
 Tulevissa versioissa kirjautuminen kannattaa toteuttaa esimerkiksi:
 
 Supabase Auth (helpoin)
@@ -212,7 +212,7 @@ profiilikuvan
 
 push-notifikaatiot
 
-🚀 Asennus ja kehityskäyttö
+Asennus ja kehityskäyttö
 1. Asenna riippuvuudet
 npm install
 
@@ -229,23 +229,23 @@ kartassa → markerin osoitteen näyttö
 
 ActivityDetailsScreen → “Osoite: …”
 
-📈 Mahdollisia laajennuksia
+Mahdollisia laajennuksia:
 
-🔑 Sisäänkirjautuminen (Supabase/Firebase)
+Sisäänkirjautuminen (Supabase/Firebase)
 
-🔔 Push-notifikaatiot aktiviteetin alkamisesta
+Push-notifikaatiot aktiviteetin alkamisesta
 
-👥 Kaverilistat & yhteiset osallistumiset
+Kaverilistat & yhteiset osallistumiset
 
-🖼 Aktiviteetin kuvan lisääminen
+Aktiviteetin kuvan lisääminen
 
-⭐ Arvostelut & kommentit
+Arvostelut & kommentit
 
-📅 Kalenteriin lisääminen
+Kalenteriin lisääminen
 
-🔎 Edistynyt haku (välimatka / tagit)
+Edistynyt haku (välimatka / tagit)
 
-🙌 Yhteenveto
+Yhteenveto
 
 Tämä README dokumentoi:
 
